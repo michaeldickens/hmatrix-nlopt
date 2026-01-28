@@ -83,6 +83,7 @@ module Numeric.NLOPT (
   , LocalAlgorithm(..)
   , LocalProblem(..)
   , minimizeLocal
+  , minimizeLocal'
   -- ** Global minimization
   , GlobalAlgorithm(..)
   , GlobalProblem(..)
@@ -631,17 +632,17 @@ setupGlobalProblem gp@(GlobalProblem _ _ _ alg) = do
   applyGlobalProblem opt gp
   return opt
 
-solveProblem :: N.Opt -> Vector Double -> IO Solution
-solveProblem opt x0 = do
+solveProblem :: N.Opt -> Vector Double -> Bool -> IO Solution
+solveProblem opt x0 throwOnFailure = do
   (N.Output outret outcost outx) <- N.optimize opt x0
-  if (N.isSuccess outret)
+  if (not throwOnFailure || N.isSuccess outret)
     then return $ Solution outcost outx outret
     else Ex.throw $ NloptException outret
 
 minimizeGlobal' :: GlobalProblem -> Vector Double -> IO Solution
 minimizeGlobal' gp x0 = do
   opt <- setupGlobalProblem gp
-  solveProblem opt x0
+  solveProblem opt x0 True
 
 data LocalProblem = LocalProblem
   { lsize :: Word                       -- ^ The dimension of the
@@ -792,10 +793,10 @@ setupLocalProblem lp@(LocalProblem sz _ alg) = do
   applyLocalProblem opt lp
   return opt
 
-minimizeLocal' :: LocalProblem -> Vector Double -> IO Solution
-minimizeLocal' lp x0 = do
+minimizeLocalIO :: LocalProblem -> Vector Double -> Bool -> IO Solution
+minimizeLocalIO lp x0 throwOnFailure = do
   opt <- setupLocalProblem lp
-  solveProblem opt x0
+  solveProblem opt x0 throwOnFailure
 
 -- |
 -- == Example program
@@ -816,10 +817,17 @@ minimizeLocal' lp x0 = do
 -- Right (Solution {solutionCost = 22.5, solutionParams = [0.4999999999999998,0.5000000000000002], solutionResult = FTOL_REACHED})
 minimizeLocal :: LocalProblem -> Vector Double -> Either N.Result Solution
 minimizeLocal prob x0 =
-  unsafePerformIO $ (Right <$> minimizeLocal' prob x0) `Ex.catch` handler
+  unsafePerformIO $ (Right <$> minimizeLocalIO prob x0 True) `Ex.catch` handler
   where
     handler :: NloptException -> IO (Either N.Result a)
     handler (NloptException retcode) = return $ Left retcode
+
+-- | Local minimization. In case of failure, return the failed `Solution` rather
+-- than a `Result`.
+--
+-- See `minimizeLocal` for example usage.
+minimizeLocal' :: LocalProblem -> Vector Double -> Solution
+minimizeLocal' prob x0 = unsafePerformIO $ minimizeLocalIO prob x0 False
 
 class ProblemSize c where
   problemSize :: c -> Word
@@ -926,7 +934,7 @@ minimizeAugLag' :: AugLagProblem -> Vector Double -> IO Solution
 minimizeAugLag' ap@(AugLagProblem _ _ alg) x0 = do
   opt <- newOpt (algorithmEnumOfAugLag alg) (problemSize ap)
   applyAugLagProblem opt ap
-  solveProblem opt x0
+  solveProblem opt x0 True
 
 -- |
 -- == Example program
