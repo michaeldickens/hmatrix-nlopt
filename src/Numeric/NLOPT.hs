@@ -88,6 +88,7 @@ module Numeric.NLOPT (
   , GlobalAlgorithm(..)
   , GlobalProblem(..)
   , minimizeGlobal
+  , minimizeGlobal'
   -- ** Minimization by augmented Lagrangian
   , AugLagAlgorithm(..)
   , AugLagProblem(..)
@@ -607,10 +608,19 @@ minimizeGlobal :: GlobalProblem  -- ^ Problem specification
                -> Vector Double  -- ^ Initial parameter guess
                -> Either N.Result Solution  -- ^ Optimization results
 minimizeGlobal prob x0 =
-  unsafePerformIO $ (Right <$> minimizeGlobal' prob x0) `Ex.catch` handler
+  unsafePerformIO $ (Right <$> minimizeGlobalIO prob x0 True) `Ex.catch` handler
   where
     handler :: NloptException -> IO (Either N.Result a)
     handler (NloptException retcode) = return $ Left retcode
+
+-- | Alternate version of `minimizeGlobal`. In case of failure, return the
+-- failed `Solution` rather than a `Result`.
+--
+-- See `minimizeGlobal` for example usage.
+minimizeGlobal' :: GlobalProblem  -- ^ Problem specification
+               -> Vector Double   -- ^ Initial parameter guess
+               -> Solution        -- ^ Optimization results
+minimizeGlobal' prob x0 = unsafePerformIO $ minimizeGlobalIO prob x0 False
 
 applyGlobalProblem :: N.Opt -> GlobalProblem -> IO ()
 applyGlobalProblem opt (GlobalProblem lb ub stop alg) = do
@@ -639,10 +649,10 @@ solveProblem opt x0 throwOnFailure = do
     then return $ Solution outcost outx outret
     else Ex.throw $ NloptException outret
 
-minimizeGlobal' :: GlobalProblem -> Vector Double -> IO Solution
-minimizeGlobal' gp x0 = do
+minimizeGlobalIO :: GlobalProblem -> Vector Double -> Bool -> IO Solution
+minimizeGlobalIO gp x0 throwOnFailure = do
   opt <- setupGlobalProblem gp
-  solveProblem opt x0 True
+  solveProblem opt x0 throwOnFailure
 
 data LocalProblem = LocalProblem
   { lsize :: Word                       -- ^ The dimension of the
@@ -822,8 +832,8 @@ minimizeLocal prob x0 =
     handler :: NloptException -> IO (Either N.Result a)
     handler (NloptException retcode) = return $ Left retcode
 
--- | Local minimization. In case of failure, return the failed `Solution` rather
--- than a `Result`.
+-- | Alternate version of `minimizeLocal`. In case of failure, return the failed
+-- `Solution` rather than a `Result`.
 --
 -- See `minimizeLocal` for example usage.
 minimizeLocal' :: LocalProblem -> Vector Double -> Solution
